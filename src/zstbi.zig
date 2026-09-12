@@ -255,14 +255,23 @@ pub const Image = struct {
         };
     }
 
-    pub fn resize(image: *const Image, new_width: u32, new_height: u32) Image {
+    pub fn resize(image: *const Image, new_width: u32, new_height: u32) !Image {
         assert(mem_allocator != null);
 
         // TODO: Add support for HDR images
+        const layout: stbir_pixel_layout = switch (image.num_components) {
+            1 => .STBIR_1CHANNEL,
+            2 => .STBIR_2CHANNEL,
+            3 => .STBIR_RGB,
+            4 => .STBIR_RGBA,
+            else => return error.InvalidComponentCount,
+        };
+
         const new_bytes_per_row = new_width * image.num_components * image.bytes_per_component;
         const new_size = new_height * new_bytes_per_row;
         const new_data = @as([*]u8, @ptrCast(zstbiMalloc(new_size)));
-        stbir_resize_uint8(
+        errdefer zstbiFree(new_data);
+        const result = stbir_resize_uint8_linear(
             image.data.ptr,
             @as(c_int, @intCast(image.width)),
             @as(c_int, @intCast(image.height)),
@@ -271,8 +280,11 @@ pub const Image = struct {
             @as(c_int, @intCast(new_width)),
             @as(c_int, @intCast(new_height)),
             0,
-            @as(c_int, @intCast(image.num_components)),
+            layout,
         );
+        if (result == null) {
+            return error.ResizeFailed;
+        }
         return .{
             .data = new_data[0..new_size],
             .width = new_width,
@@ -455,7 +467,7 @@ fn zstbirFree(maybe_ptr: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
 
 extern fn stbi_info(filename: [*:0]const u8, x: *c_int, y: *c_int, comp: *c_int) c_int;
 
-extern fn stbi_load(
+pub extern fn stbi_load(
     filename: [*:0]const u8,
     x: *c_int,
     y: *c_int,
@@ -463,7 +475,7 @@ extern fn stbi_load(
     desired_channels: c_int,
 ) ?[*]u8;
 
-extern fn stbi_load_16(
+pub extern fn stbi_load_16(
     filename: [*:0]const u8,
     x: *c_int,
     y: *c_int,
@@ -471,7 +483,7 @@ extern fn stbi_load_16(
     desired_channels: c_int,
 ) ?[*]u16;
 
-extern fn stbi_loadf(
+pub extern fn stbi_loadf(
     filename: [*:0]const u8,
     x: *c_int,
     y: *c_int,
@@ -497,21 +509,32 @@ pub extern fn stbi_loadf_from_memory(
     desired_channels: c_int,
 ) ?[*]f32;
 
-extern fn stbi_image_free(image_data: ?[*]u8) void;
+pub extern fn stbi_load_gif_from_memory(
+    buffer: [*]const u8,
+    len: c_int,
+    delays: *[*]c_int,
+    x: *c_int,
+    y: *c_int,
+    z: *c_int,
+    comp: *c_int,
+    req_comp: c_int,
+) ?[*]u8;
 
-extern fn stbi_hdr_to_ldr_scale(scale: f32) void;
-extern fn stbi_hdr_to_ldr_gamma(gamma: f32) void;
-extern fn stbi_ldr_to_hdr_scale(scale: f32) void;
-extern fn stbi_ldr_to_hdr_gamma(gamma: f32) void;
+pub extern fn stbi_image_free(image_data: ?[*]u8) void;
 
-extern fn stbi_is_16_bit(filename: [*:0]const u8) c_int;
-extern fn stbi_is_hdr(filename: [*:0]const u8) c_int;
-extern fn stbi_is_hdr_from_memory(buffer: [*]const u8, len: c_int) c_int;
+pub extern fn stbi_hdr_to_ldr_scale(scale: f32) void;
+pub extern fn stbi_hdr_to_ldr_gamma(gamma: f32) void;
+pub extern fn stbi_ldr_to_hdr_scale(scale: f32) void;
+pub extern fn stbi_ldr_to_hdr_gamma(gamma: f32) void;
 
-extern fn stbi_set_flip_vertically_on_load(flag_true_if_should_flip: c_int) void;
-extern fn stbi_flip_vertically_on_write(flag: c_int) void; // flag is non-zero to flip data vertically
+pub extern fn stbi_is_16_bit(filename: [*:0]const u8) c_int;
+pub extern fn stbi_is_hdr(filename: [*:0]const u8) c_int;
+pub extern fn stbi_is_hdr_from_memory(buffer: [*]const u8, len: c_int) c_int;
 
-extern fn stbir_resize_uint8(
+pub extern fn stbi_set_flip_vertically_on_load(flag_true_if_should_flip: c_int) void;
+pub extern fn stbi_flip_vertically_on_write(flag: c_int) void; // flag is non-zero to flip data vertically
+
+pub extern fn stbir_resize_uint8_linear(
     input_pixels: [*]const u8,
     input_w: c_int,
     input_h: c_int,
@@ -520,19 +543,10 @@ extern fn stbir_resize_uint8(
     output_w: c_int,
     output_h: c_int,
     output_stride_in_bytes: c_int,
-    num_channels: c_int,
-) void;
+    num_channels: stbir_pixel_layout,
+) ?[*]u8;
 
-extern fn stbi_write_jpg(
-    filename: [*:0]const u8,
-    w: c_int,
-    h: c_int,
-    comp: c_int,
-    data: [*]const u8,
-    quality: c_int,
-) c_int;
-
-extern fn stbi_write_png(
+pub extern fn stbi_write_png(
     filename: [*:0]const u8,
     w: c_int,
     h: c_int,
@@ -541,7 +555,41 @@ extern fn stbi_write_png(
     stride_in_bytes: c_int,
 ) c_int;
 
-extern fn stbi_write_png_to_func(
+pub extern fn stbi_write_bmp(
+    filename: [*:0]const u8,
+    x: c_int,
+    y: c_int,
+    comp: c_int,
+    data: ?*const anyopaque,
+) c_int;
+
+pub extern fn stbi_write_tga(
+    filename: [*:0]const u8,
+    x: c_int,
+    y: c_int,
+    comp: c_int,
+    data: ?*const anyopaque,
+) c_int;
+
+pub extern fn stbi_write_jpg(
+    filename: [*:0]const u8,
+    w: c_int,
+    h: c_int,
+    comp: c_int,
+    data: [*]const u8,
+    quality: c_int,
+) c_int;
+
+pub extern fn stbi_write_png_to_mem(
+    pixels: [*]const u8,
+    stride_bytes: c_int,
+    x: c_int,
+    y: c_int,
+    n: c_int,
+    out_len: [*]c_int,
+) ?[*]u8;
+
+pub extern fn stbi_write_png_to_func(
     func: *const fn (?*anyopaque, ?*anyopaque, c_int) callconv(.c) void,
     context: ?*anyopaque,
     w: c_int,
@@ -551,7 +599,7 @@ extern fn stbi_write_png_to_func(
     stride_in_bytes: c_int,
 ) c_int;
 
-extern fn stbi_write_jpg_to_func(
+pub extern fn stbi_write_jpg_to_func(
     func: *const fn (?*anyopaque, ?*anyopaque, c_int) callconv(.c) void,
     context: ?*anyopaque,
     x: c_int,
@@ -560,6 +608,35 @@ extern fn stbi_write_jpg_to_func(
     data: [*]const u8,
     quality: c_int,
 ) c_int;
+
+pub const stbir_pixel_layout = enum(c_int) {
+    STBIR_1CHANNEL = 1,
+    STBIR_2CHANNEL = 2,
+    STBIR_RGB = 3, // 3-chan, with order specified (for channel flipping)
+    STBIR_BGR = 0, // 3-chan, with order specified (for channel flipping)
+    STBIR_4CHANNEL = 5,
+
+    STBIR_RGBA = 4, // alpha formats, where alpha is NOT premultiplied into color channels
+    STBIR_BGRA = 6,
+    STBIR_ARGB = 7,
+    STBIR_ABGR = 8,
+    STBIR_RA = 9,
+    STBIR_AR = 10,
+
+    STBIR_RGBA_PM = 11, // alpha formats, where alpha is premultiplied into color channels
+    STBIR_BGRA_PM = 12,
+    STBIR_ARGB_PM = 13,
+    STBIR_ABGR_PM = 14,
+    STBIR_RA_PM = 15,
+    STBIR_AR_PM = 16,
+
+    // STBIR_RGBA_NO_AW = 11, // alpha formats, where NO alpha weighting is applied at all!
+    // STBIR_BGRA_NO_AW = 12, //   these are just synonyms for the _PM flags (which also do
+    // STBIR_ARGB_NO_AW = 13, //   no alpha weighting). These names just make it more clear
+    // STBIR_ABGR_NO_AW = 14, //   for some folks).
+    // STBIR_RA_NO_AW = 15,
+    // STBIR_AR_NO_AW = 16,
+};
 
 test "zstbi basic" {
     init(testing.io, testing.allocator);
@@ -580,12 +657,22 @@ test "zstbi resize" {
     var im1 = try Image.createEmpty(32, 32, 4, .{});
     defer im1.deinit();
 
-    var im2 = im1.resize(8, 6);
+    var im2 = try im1.resize(8, 6);
     defer im2.deinit();
 
     try testing.expect(im2.width == 8);
     try testing.expect(im2.height == 6);
     try testing.expect(im2.num_components == 4);
+}
+
+test "zstbi resize invalid components" {
+    init(testing.io, testing.allocator);
+    defer deinit();
+
+    var im1 = try Image.createEmpty(8, 6, 0, .{});
+    defer im1.deinit();
+
+    try testing.expectError(error.InvalidComponentCount, im1.resize(8, 6));
 }
 
 test "zstbi write and load file" {
