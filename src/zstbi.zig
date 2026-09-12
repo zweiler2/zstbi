@@ -2,6 +2,23 @@ const std = @import("std");
 const testing = std.testing;
 const assert = std.debug.assert;
 
+const mem_alignment = 16;
+var zstb_io: std.Io = undefined;
+var mem_allocator: ?std.mem.Allocator = null;
+var mem_allocations: ?std.AutoHashMap(usize, usize) = null;
+var mem_mutex: std.Io.Mutex = .init;
+
+extern var zstbiMallocPtr: ?*const fn (size: usize) callconv(.c) ?*anyopaque;
+extern var zstbiReallocPtr: ?*const fn (ptr: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque;
+extern var zstbiFreePtr: ?*const fn (maybe_ptr: ?*anyopaque) callconv(.c) void;
+
+extern var zstbirMallocPtr: ?*const fn (size: usize, maybe_context: ?*anyopaque) callconv(.c) ?*anyopaque;
+extern var zstbirFreePtr: ?*const fn (maybe_ptr: ?*anyopaque, maybe_context: ?*anyopaque) callconv(.c) void;
+
+extern var zstbiwMallocPtr: ?*const fn (size: usize) callconv(.c) ?*anyopaque;
+extern var zstbiwReallocPtr: ?*const fn (ptr: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque;
+extern var zstbiwFreePtr: ?*const fn (maybe_ptr: ?*anyopaque) callconv(.c) void;
+
 pub fn init(io: std.Io, allocator: std.mem.Allocator) void {
     assert(mem_allocator == null);
     mem_allocator = allocator;
@@ -390,15 +407,6 @@ pub fn setFlipVerticallyOnWrite(should_flip: bool) void {
     stbi_flip_vertically_on_write(if (should_flip) 1 else 0);
 }
 
-var zstb_io: std.Io = undefined;
-var mem_allocator: ?std.mem.Allocator = null;
-var mem_allocations: ?std.AutoHashMap(usize, usize) = null;
-var mem_mutex: std.Io.Mutex = .init;
-const mem_alignment = 16;
-
-extern var zstbiMallocPtr: ?*const fn (size: usize) callconv(.c) ?*anyopaque;
-extern var zstbiwMallocPtr: ?*const fn (size: usize) callconv(.c) ?*anyopaque;
-
 fn zstbiMalloc(size: usize) callconv(.c) ?*anyopaque {
     mem_mutex.lock(zstb_io) catch return null;
     defer mem_mutex.unlock(zstb_io);
@@ -413,9 +421,6 @@ fn zstbiMalloc(size: usize) callconv(.c) ?*anyopaque {
 
     return mem.ptr;
 }
-
-extern var zstbiReallocPtr: ?*const fn (ptr: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque;
-extern var zstbiwReallocPtr: ?*const fn (ptr: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque;
 
 fn zstbiRealloc(ptr: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque {
     mem_mutex.lock(zstb_io) catch return null;
@@ -439,9 +444,6 @@ fn zstbiRealloc(ptr: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque {
     return new_mem.ptr;
 }
 
-extern var zstbiFreePtr: ?*const fn (maybe_ptr: ?*anyopaque) callconv(.c) void;
-extern var zstbiwFreePtr: ?*const fn (maybe_ptr: ?*anyopaque) callconv(.c) void;
-
 fn zstbiFree(maybe_ptr: ?*anyopaque) callconv(.c) void {
     if (maybe_ptr) |ptr| {
         mem_mutex.lock(zstb_io) catch return;
@@ -453,13 +455,9 @@ fn zstbiFree(maybe_ptr: ?*anyopaque) callconv(.c) void {
     }
 }
 
-extern var zstbirMallocPtr: ?*const fn (size: usize, maybe_context: ?*anyopaque) callconv(.c) ?*anyopaque;
-
 fn zstbirMalloc(size: usize, _: ?*anyopaque) callconv(.c) ?*anyopaque {
     return zstbiMalloc(size);
 }
-
-extern var zstbirFreePtr: ?*const fn (maybe_ptr: ?*anyopaque, maybe_context: ?*anyopaque) callconv(.c) void;
 
 fn zstbirFree(maybe_ptr: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
     zstbiFree(maybe_ptr);
