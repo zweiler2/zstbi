@@ -463,7 +463,7 @@ fn zstbirFree(maybe_ptr: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
     zstbiFree(maybe_ptr);
 }
 
-extern fn stbi_info(filename: [*:0]const u8, x: *c_int, y: *c_int, comp: *c_int) c_int;
+pub extern fn stbi_info(filename: [*:0]const u8, x: *c_int, y: *c_int, comp: *c_int) c_int;
 
 pub extern fn stbi_load(
     filename: [*:0]const u8,
