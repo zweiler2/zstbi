@@ -8,16 +8,16 @@ var mem_allocator: ?std.mem.Allocator = null;
 var mem_allocations: ?std.AutoHashMap(usize, usize) = null;
 var mem_mutex: std.Io.Mutex = .init;
 
-extern var zstbiMallocPtr: ?*const fn (size: usize) callconv(.c) ?*anyopaque;
-extern var zstbiReallocPtr: ?*const fn (ptr: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque;
-extern var zstbiFreePtr: ?*const fn (maybe_ptr: ?*anyopaque) callconv(.c) void;
+extern var zstbi_image_MallocPtr: ?*const fn (size: usize) callconv(.c) ?*anyopaque;
+extern var zstbi_image_ReallocPtr: ?*const fn (ptr: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque;
+extern var zstbi_image_FreePtr: ?*const fn (maybe_ptr: ?*anyopaque) callconv(.c) void;
 
-extern var zstbirMallocPtr: ?*const fn (size: usize, maybe_context: ?*anyopaque) callconv(.c) ?*anyopaque;
-extern var zstbirFreePtr: ?*const fn (maybe_ptr: ?*anyopaque, maybe_context: ?*anyopaque) callconv(.c) void;
+extern var zstbi_resize_MallocPtr: ?*const fn (size: usize, maybe_context: ?*anyopaque) callconv(.c) ?*anyopaque;
+extern var zstbi_resize_FreePtr: ?*const fn (maybe_ptr: ?*anyopaque, maybe_context: ?*anyopaque) callconv(.c) void;
 
-extern var zstbiwMallocPtr: ?*const fn (size: usize) callconv(.c) ?*anyopaque;
-extern var zstbiwReallocPtr: ?*const fn (ptr: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque;
-extern var zstbiwFreePtr: ?*const fn (maybe_ptr: ?*anyopaque) callconv(.c) void;
+extern var zstbi_write_MallocPtr: ?*const fn (size: usize) callconv(.c) ?*anyopaque;
+extern var zstbi_write_ReallocPtr: ?*const fn (ptr: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque;
+extern var zstbi_write_FreePtr: ?*const fn (maybe_ptr: ?*anyopaque) callconv(.c) void;
 
 pub fn init(io: std.Io, allocator: std.mem.Allocator) void {
     assert(mem_allocator == null);
@@ -26,16 +26,16 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) void {
     zstb_io = io;
 
     // stb image
-    zstbiMallocPtr = zstbiMalloc;
-    zstbiReallocPtr = zstbiRealloc;
-    zstbiFreePtr = zstbiFree;
+    zstbi_image_MallocPtr = zstbiMalloc;
+    zstbi_image_ReallocPtr = zstbiRealloc;
+    zstbi_image_FreePtr = zstbiFree;
     // stb image resize
-    zstbirMallocPtr = zstbirMalloc;
-    zstbirFreePtr = zstbirFree;
+    zstbi_resize_MallocPtr = zstbirMalloc;
+    zstbi_resize_FreePtr = zstbirFree;
     // stb image write
-    zstbiwMallocPtr = zstbiMalloc;
-    zstbiwReallocPtr = zstbiRealloc;
-    zstbiwFreePtr = zstbiFree;
+    zstbi_write_MallocPtr = zstbiMalloc;
+    zstbi_write_ReallocPtr = zstbiRealloc;
+    zstbi_write_FreePtr = zstbiFree;
 }
 
 pub fn deinit() void {
