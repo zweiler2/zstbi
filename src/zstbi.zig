@@ -584,7 +584,7 @@ pub extern fn stbi_write_png_to_mem(
     x: c_int,
     y: c_int,
     n: c_int,
-    out_len: [*]c_int,
+    out_len: *c_int,
 ) ?[*]u8;
 
 pub extern fn stbi_write_png_to_func(
