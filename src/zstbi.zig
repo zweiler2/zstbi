@@ -375,6 +375,89 @@ pub const Image = struct {
     }
 };
 
+pub const Gif = struct {
+    data: []u8,
+    width: u32,
+    height: u32,
+    frame_count: u32,
+    num_components: u32,
+    delays: ?[]u32,
+
+    pub fn loadFromMemory(buffer: []const u8, req_comp: u32, with_delays: bool) !Gif {
+        assert(mem_allocator != null);
+
+        var x: c_int = undefined;
+        var y: c_int = undefined;
+        var z: c_int = undefined;
+        var comp: c_int = undefined;
+        var delays_ptr: [*]c_int = undefined;
+        const data_ptr = stbi_load_gif_from_memory(
+            buffer.ptr,
+            @intCast(buffer.len),
+            if (with_delays)
+                &delays_ptr
+            else
+                null,
+            &x,
+            &y,
+            &z,
+            &comp,
+            @intCast(req_comp),
+        );
+        if (data_ptr == null) {
+            return error.GifInitFailed;
+        }
+
+        const width: u32 = @intCast(x);
+        const height: u32 = @intCast(y);
+        const frame_count: u32 = @intCast(z);
+        const num_components: u32 =
+            if (req_comp == 0)
+                @intCast(comp)
+            else
+                req_comp;
+        const delays: ?[]u32 = if (with_delays) blk: {
+            const d: [*]u32 = @ptrCast(delays_ptr);
+            break :blk d[0..frame_count];
+        } else null;
+        return .{
+            .data = data_ptr.?[0 .. frame_count * height * width * num_components],
+            .width = width,
+            .height = height,
+            .frame_count = frame_count,
+            .num_components = num_components,
+            .delays = delays,
+        };
+    }
+
+    pub fn delayMs(gif: Gif, frame_index: u32) !u32 {
+        if (frame_index >= gif.frame_count) {
+            return error.InvalidFrameIndex;
+        }
+        if (gif.delays) |dels| {
+            return dels[frame_index];
+        } else {
+            return error.NoDelays;
+        }
+    }
+
+    pub fn frame(gif: Gif, frame_index: u32) ![]u8 {
+        if (frame_index >= gif.frame_count) {
+            return error.InvalidFrameIndex;
+        }
+        const stride: u32 = gif.width * gif.num_components * gif.height;
+        return gif.data[frame_index * stride .. (frame_index + 1) * stride];
+    }
+
+    pub fn deinit(gif: *Gif) void {
+        stbi_image_free(gif.data.ptr);
+        if (gif.delays) |delays| {
+            zstbiFree(delays.ptr);
+        }
+        gif.* = undefined;
+    }
+};
+
 /// `pub fn setHdrToLdrScale(scale: f32) void`
 pub const setHdrToLdrScale = stbi_hdr_to_ldr_scale;
 
@@ -519,7 +602,7 @@ pub extern fn stbi_loadf_from_memory(
 pub extern fn stbi_load_gif_from_memory(
     buffer: [*]const u8,
     len: c_int,
-    delays: *[*]c_int,
+    delays: ?*[*]c_int,
     x: *c_int,
     y: *c_int,
     z: *c_int,
@@ -808,4 +891,79 @@ test "zstbi write and load file" {
 
     try std.Io.Dir.cwd().deleteFile(testing.io, "test_img.png");
     try std.Io.Dir.cwd().deleteFile(testing.io, "test_img.jpg");
+}
+
+test "zstbi gif load from memory" {
+    init(testing.io, testing.allocator);
+    defer deinit();
+
+    const gif_bytes = [_]u8{
+        71, 73, 70,  56, 57,  97, 2,   0,  2,  0,   129, 0,   0,  0,   0,  0,   0, 0, 255, 0,  255, 0, 255, 0, 0, 33, 255, 11, 78, 69,
+        84, 83, 67,  65, 80,  69, 50,  46, 48, 3,   1,   0,   0,  0,   33, 249, 4, 0, 10,  0,  0,   0, 44,  0, 0, 0,  0,   2,  0,  2,
+        0,  0,  8,   7,  0,   7,  8,   8,  0,  32,  32,  0,   33, 249, 4,  1,   5, 0, 4,   0,  44,  1, 0,   1, 0, 1,  0,   1,  0,  129,
+        0,  0,  255, 0,  255, 0,  255, 0,  0,  255, 255, 255, 8,  4,   0,  7,   4, 4, 0,   59,
+    };
+
+    var gif = try Gif.loadFromMemory(&gif_bytes, 0, true);
+    defer gif.deinit();
+
+    try testing.expect(gif.width == 2);
+    try testing.expect(gif.height == 2);
+    try testing.expect(gif.frame_count == 2);
+    try testing.expect(gif.num_components == 4);
+    try testing.expect(gif.delays.?.len == 2);
+    try testing.expectEqual(100, gif.delayMs(0));
+    try testing.expectEqual(50, gif.delayMs(1));
+    try testing.expectEqual(2 * 2 * 2 * 4, gif.data.len);
+    try testing.expectEqual(2 * 2 * 4, (try gif.frame(0)).len);
+    try testing.expectEqual(2 * 2 * 4, (try gif.frame(1)).len);
+}
+
+test "zstbi gif load without delays" {
+    init(testing.io, testing.allocator);
+    defer deinit();
+
+    const gif_bytes = [_]u8{
+        71, 73, 70,  56, 57,  97, 2,   0,  2,  0,   129, 0,   0,  0,   0,  0,   0, 0, 255, 0,  255, 0, 255, 0, 0, 33, 255, 11, 78, 69,
+        84, 83, 67,  65, 80,  69, 50,  46, 48, 3,   1,   0,   0,  0,   33, 249, 4, 0, 10,  0,  0,   0, 44,  0, 0, 0,  0,   2,  0,  2,
+        0,  0,  8,   7,  0,   7,  8,   8,  0,  32,  32,  0,   33, 249, 4,  1,   5, 0, 4,   0,  44,  1, 0,   1, 0, 1,  0,   1,  0,  129,
+        0,  0,  255, 0,  255, 0,  255, 0,  0,  255, 255, 255, 8,  4,   0,  7,   4, 4, 0,   59,
+    };
+
+    var gif = try Gif.loadFromMemory(&gif_bytes, 0, false);
+    defer gif.deinit();
+
+    try testing.expect(gif.width == 2);
+    try testing.expect(gif.height == 2);
+    try testing.expect(gif.frame_count == 2);
+    try testing.expect(gif.delays == null);
+    try testing.expectError(error.NoDelays, gif.delayMs(0));
+    try testing.expectEqual(@as(usize, 2 * 2 * 2 * 4), gif.data.len);
+}
+
+test "zstbi gif load from memory req_comp 3" {
+    init(testing.io, testing.allocator);
+    defer deinit();
+
+    const gif_bytes = [_]u8{
+        71, 73, 70,  56, 57,  97, 2,   0,  2,  0,   129, 0,   0,  0,   0,  0,   0, 0, 255, 0,  255, 0, 255, 0, 0, 33, 255, 11, 78, 69,
+        84, 83, 67,  65, 80,  69, 50,  46, 48, 3,   1,   0,   0,  0,   33, 249, 4, 0, 10,  0,  0,   0, 44,  0, 0, 0,  0,   2,  0,  2,
+        0,  0,  8,   7,  0,   7,  8,   8,  0,  32,  32,  0,   33, 249, 4,  1,   5, 0, 4,   0,  44,  1, 0,   1, 0, 1,  0,   1,  0,  129,
+        0,  0,  255, 0,  255, 0,  255, 0,  0,  255, 255, 255, 8,  4,   0,  7,   4, 4, 0,   59,
+    };
+
+    var gif = try Gif.loadFromMemory(&gif_bytes, 3, true);
+    defer gif.deinit();
+
+    try testing.expect(gif.num_components == 3);
+    try testing.expectEqual(@as(usize, 2 * 2 * 2 * 3), gif.data.len);
+}
+
+test "zstbi gif load invalid" {
+    init(testing.io, testing.allocator);
+    defer deinit();
+
+    const garbage = [_]u8{ 1, 2, 3 };
+
+    try testing.expectError(error.GifInitFailed, Gif.loadFromMemory(&garbage, 4, true));
 }
