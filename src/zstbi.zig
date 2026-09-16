@@ -498,6 +498,15 @@ pub extern fn stbi_load_from_memory(
     desired_channels: c_int,
 ) ?[*]u8;
 
+pub extern fn stbi_load_16_from_memory(
+    buffer: [*]const u16,
+    len: c_int,
+    x: *c_int,
+    y: *c_int,
+    channels_in_file: *c_int,
+    desired_channels: c_int,
+) ?[*]u16;
+
 pub extern fn stbi_loadf_from_memory(
     buffer: [*]const u8,
     len: c_int,
@@ -532,6 +541,18 @@ pub extern fn stbi_is_hdr_from_memory(buffer: [*]const u8, len: c_int) c_int;
 pub extern fn stbi_set_flip_vertically_on_load(flag_true_if_should_flip: c_int) void;
 pub extern fn stbi_flip_vertically_on_write(flag: c_int) void; // flag is non-zero to flip data vertically
 
+pub extern fn stbir_resize_uint8_srgb(
+    input_pixels: [*]const u8,
+    input_w: c_int,
+    input_h: c_int,
+    input_stride_in_bytes: c_int,
+    output_pixels: [*]u8,
+    output_w: c_int,
+    output_h: c_int,
+    output_stride_in_bytes: c_int,
+    pixel_type: stbir_pixel_layout,
+) ?[*]u8;
+
 pub extern fn stbir_resize_uint8_linear(
     input_pixels: [*]const u8,
     input_w: c_int,
@@ -541,7 +562,34 @@ pub extern fn stbir_resize_uint8_linear(
     output_w: c_int,
     output_h: c_int,
     output_stride_in_bytes: c_int,
-    num_channels: stbir_pixel_layout,
+    pixel_type: stbir_pixel_layout,
+) ?[*]u8;
+
+pub extern fn stbir_resize_float_linear(
+    input_pixels: [*]const u8,
+    input_w: c_int,
+    input_h: c_int,
+    input_stride_in_bytes: c_int,
+    output_pixels: [*]f32,
+    output_w: c_int,
+    output_h: c_int,
+    output_stride_in_bytes: c_int,
+    pixel_type: stbir_pixel_layout,
+) ?[*]f32;
+
+pub extern fn stbir_resize(
+    input_pixels: [*]const u8,
+    input_w: c_int,
+    input_h: c_int,
+    input_stride_in_bytes: c_int,
+    output_pixels: [*]u8,
+    output_w: c_int,
+    output_h: c_int,
+    output_stride_in_bytes: c_int,
+    pixel_type: stbir_pixel_layout,
+    data_type: stbir_datatype,
+    edge: stbir_edge,
+    filter: stbir_filter,
 ) ?[*]u8;
 
 pub extern fn stbi_write_png(
@@ -588,7 +636,7 @@ pub extern fn stbi_write_png_to_mem(
 ) ?[*]u8;
 
 pub extern fn stbi_write_png_to_func(
-    func: *const fn (?*anyopaque, ?*anyopaque, c_int) callconv(.c) void,
+    func: stbi_write_func,
     context: ?*anyopaque,
     w: c_int,
     h: c_int,
@@ -597,8 +645,35 @@ pub extern fn stbi_write_png_to_func(
     stride_in_bytes: c_int,
 ) c_int;
 
+pub extern fn stbi_write_bmp_to_func(
+    func: stbi_write_func,
+    context: ?*anyopaque,
+    w: c_int,
+    h: c_int,
+    comp: c_int,
+    data: [*]const u8,
+) c_int;
+
+pub extern fn stbi_write_tga_to_func(
+    func: stbi_write_func,
+    context: ?*anyopaque,
+    w: c_int,
+    h: c_int,
+    comp: c_int,
+    data: [*]const u8,
+) c_int;
+
+pub extern fn stbi_write_hdr_to_func(
+    func: stbi_write_func,
+    context: ?*anyopaque,
+    w: c_int,
+    h: c_int,
+    comp: c_int,
+    data: [*]const f32,
+) c_int;
+
 pub extern fn stbi_write_jpg_to_func(
-    func: *const fn (?*anyopaque, ?*anyopaque, c_int) callconv(.c) void,
+    func: stbi_write_func,
     context: ?*anyopaque,
     x: c_int,
     y: c_int,
@@ -635,6 +710,35 @@ pub const stbir_pixel_layout = enum(c_int) {
     // STBIR_RA_NO_AW = 15,
     // STBIR_AR_NO_AW = 16,
 };
+
+pub const stbir_edge = enum(c_int) {
+    STBIR_EDGE_CLAMP = 0,
+    STBIR_EDGE_REFLECT = 1,
+    STBIR_EDGE_WRAP = 2, // this edge mode is slower and uses more memory
+    STBIR_EDGE_ZERO = 3,
+};
+
+pub const stbir_filter = enum(c_int) {
+    STBIR_FILTER_DEFAULT = 0, // use same filter type that easy-to-use API chooses
+    STBIR_FILTER_BOX = 1, // A trapezoid w/1-pixel wide ramps, same result as box for integer scale ratios
+    STBIR_FILTER_TRIANGLE = 2, // On upsampling, produces same results as bilinear texture filtering
+    STBIR_FILTER_CUBICBSPLINE = 3, // The cubic b-spline (aka Mitchell-Netrevalli with B=1,C=0), gaussian-esque
+    STBIR_FILTER_CATMULLROM = 4, // An interpolating cubic spline
+    STBIR_FILTER_MITCHELL = 5, // Mitchell-Netrevalli filter with B=1/3, C=1/3
+    STBIR_FILTER_POINT_SAMPLE = 6, // Simple point sampling
+    STBIR_FILTER_OTHER = 7, // User callback specified
+};
+
+pub const stbir_datatype = enum(c_int) {
+    STBIR_TYPE_UINT8 = 0,
+    STBIR_TYPE_UINT8_SRGB = 1,
+    STBIR_TYPE_UINT8_SRGB_ALPHA = 2, // alpha channel, when present, should also be SRGB (this is very unusual)
+    STBIR_TYPE_UINT16 = 3,
+    STBIR_TYPE_FLOAT = 4,
+    STBIR_TYPE_HALF_FLOAT = 5,
+};
+
+pub const stbi_write_func = *const fn (context: ?*anyopaque, data: ?*anyopaque, size: c_int) callconv(.c) void;
 
 test "zstbi basic" {
     init(testing.io, testing.allocator);
